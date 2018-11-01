@@ -433,6 +433,105 @@ The basic command line looks like this:
 ./draco_decoder -i in.drc -o out.obj
 ~~~~~
 
+C++ Encoder API
+-------------
+
+If you'd like to add mesh encoding to your applications you will need to include
+the `dracoenc` library.
+
+Be aware that draco currently only supports indexed triangle lists for mesh objects. 
+
+~~~~~ cpp
+define std::vector<float, 3> Vector3D; // xyz
+define std::vector<uint8_t, 3> ColorRGB; // RGB
+
+// these are just some example data structures to capsule the mesh geometry data
+const std::vector<uint32_t> indices;
+const std::vector<Vector3D> vertices;
+const std::vector<Vector3D> normals; // optional
+const std::vector<ColorRGB> colors; // optional
+
+// define a draco::Mesh to capsule the geometry data
+std::unique_ptr<draco::Mesh> pMesh(new draco::Mesh());
+pMesh->set_num_points(vertices.size());
+
+ // INDICES
+ // a single face of the mesh is defined by 3 indcies in an indexed trianlge list
+for (int nFaceIndex = 0; nFaceIndex < indices.size() / 3; nFaceIndex++)
+{
+    draco::Mesh::Face face;
+    face[0] = vecVertexIndices[(nFaceIndex * 3) + 0];
+    face[1] = vecVertexIndices[(nFaceIndex * 3) + 1];
+    face[2] = vecVertexIndices[(nFaceIndex * 3) + 2];
+
+    pMesh->AddFace(face);
+}
+
+// POSITION
+draco::GeometryAttribute PositionAttribute;
+PositionAttribute.Init(draco::GeometryAttribute::POSITION, nullptr, 3, draco::DT_FLOAT32, false, sizeof(float) * 3, 0);
+const int32_t positionAttributeId = pMesh->AddAttribute(PositionAttribute, true, vertices.size());
+
+// Set POSITION attribute values
+for (int attributeValueIndex = 0; attributeValueIndex < vertices.size(); attributeValueIndex++)
+{
+    // SetAttributeValue takes multiple floats; therefore attributeValueIndex * 3 is needed for vertices and normals as index
+    pMesh->attribute(positionAttributeId)->SetAttributeValue(draco::AttributeValueIndex(attributeValueIndex), &vertices[attributeValueIndex]);
+}
+
+// NORMAL (optional)
+draco::GeometryAttribute NormalAttribute;
+NormalAttribute.Init(draco::GeometryAttribute::NORMAL, nullptr, 3, draco::DT_FLOAT32, false, sizeof(float) * 3, 0);
+const int32_t nomarlAttributeId = pMesh->AddAttribute(NormalAttribute, true, vertices.size());
+
+// Set NORMAL attribute values
+for (int attributeValueIndex = 0; attributeValueIndex < vertices.size(); attributeValueIndex++)
+{
+    pMesh->attribute(nomarlAttributeId)->SetAttributeValue(draco::AttributeValueIndex(attributeValueIndex), &normals[attributeValueIndex]);
+}
+
+// COLOR (optional)
+draco::GeometryAttribute ColorAttribute;
+ColorAttribute.Init(draco::GeometryAttribute::COLOR, nullptr, 3, draco::DT_UINT8, false, sizeof(uint8_t) * 3, 0);
+const int32_t colorAttributeId = pMesh->AddAttribute(ColorAttribute, true, vertices.size());
+
+// Set COLOR attribute values
+for (int attributeValueIndex = 0; attributeValueIndex < vertices.size(); ++attributeValueIndex)
+{
+    pMesh->attribute(colorAttributeId)->SetAttributeValue(draco::AttributeValueIndex(attributeValueIndex), &colors[attributeValueIndex]);
+}
+
+pMesh->DeduplicatePointIds(); // optional
+pMesh->DeduplicateAttributeValues(); // optional
+
+draco::EncoderBuffer DracoEncoderBuffer;
+draco::Encoder       DracoEncoder;
+
+// will quantize the positions to 14 bits (default for the position coordinates)
+DracoEncoder.SetAttributeQuantization(draco::GeometryAttribute::POSITION, 14);
+DracoEncoder.SetAttributeQuantization(draco::GeometryAttribute::NORMAL, 14);
+DracoEncoder.SetAttributeQuantization(draco::GeometryAttribute::COLOR, 14);
+// Set the target speed for compression and decompression. In general, the highest setting, 10, will have the most compression but worst decompression speed. 0 will have the least compression, but best decompression speed. The default setting is 7. Futher informations available in draco\src\draco\compression\expert_encode.h
+DracoEncoder.SetSpeedOptions(7, 7);
+
+DracoEncoder.EncodeMeshToBuffer(*pMesh, &DracoEncoderBuffer);
+
+// write compressed mesh to a file
+ofstream outputFile;
+outputFile.open("compressed.drc", ios::out | ios::binary);
+outputFile.write(&DracoEncoderBuffer.data(), DracoEncoderBuffer.size());
+outputFile.close();
+
+DracoEncoderBuffer.Clear();
+DracoEncoder.Reset();
+
+// delete Mesh object
+pMesh.reset();
+~~~~~
+
+Please see [src/draco/mesh/mesh.h](src/draco/mesh/mesh.h) for the full `Mesh` class interface and
+[src/draco/point_cloud/point_cloud.h](src/draco/point_cloud/point_cloud.h) for the full `PointCloud` class interface.
+
 C++ Decoder API
 -------------
 
